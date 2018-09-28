@@ -45,7 +45,8 @@ def get_args():
 
     parser.add_argument('-c', '--cluster_name',
                         dest='clusterName',
-                        required=True,
+                        required=False,
+                        default='Quadris vSAN Cluster',
                         help='Cluster Name')
 
     parser.add_argument("--performance",

@@ -43,7 +43,7 @@ def GetArgs():
    parser.add_argument('-p', '--password', required=False, action='store',
                        help='Password to use when connecting to host')
    parser.add_argument('--cluster', dest='clusterName', metavar="CLUSTER",
-                      default='VSAN-Cluster')
+                      default='Quadris vSAN Cluster')
    args = parser.parse_args()
    return args
 
