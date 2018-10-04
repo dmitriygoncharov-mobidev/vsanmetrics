@@ -2,26 +2,36 @@
 # -*- coding: utf-8 -*-
 
 """
-Copyright 2016 VMware, Inc.  All rights reserved.
+Copyright 2016-2017 VMware, Inc.  All rights reserved.
 
-This module defines basic helper functions used in the sampe codes
+This module defines basic helper functions used in the sample codes
 """
 
 __author__ = 'VMware, Inc'
 
-from pyVmomi import vim, vmodl, SoapStubAdapter
-#import the VSAN API python bindings
+import sys
+import ssl
+if (sys.version_info[0] == 3):
+   from urllib.request import urlopen
+else:
+   from urllib2 import urlopen
+from xml.dom import minidom
+
+from pyVmomi import vim, vmodl, SoapStubAdapter, VmomiSupport
+# Import the vSAN API python bindings
 import vsanmgmtObjects
 
 VSAN_API_VC_SERVICE_ENDPOINT = '/vsanHealth'
 VSAN_API_ESXI_SERVICE_ENDPOINT = '/vsan'
 
-#Constuct a stub for VSAN API access using VC or ESXi sessions from  existing
-#stubs. Correspoding VC or ESXi service endpoint is required. VC service
-#endpoint is used as default
+VSAN_VMODL_VERSION = "vsan.version.version3"
+
+# Construct a stub for vSAN API access using vCenter or ESXi sessions from
+# existing stubs. Corresponding vCenter or ESXi service endpoint is required.
+# vCenter service endpoint is used by default.
 def _GetVsanStub(
       stub, endpoint=VSAN_API_VC_SERVICE_ENDPOINT,
-      context=None, version='vim.version.version10'
+      context=None, version='vim.version.version11'
    ):
 
    hostname = stub.host.split(':')[0]
@@ -34,19 +44,19 @@ def _GetVsanStub(
    vsanStub.cookie = stub.cookie
    return vsanStub
 
-#Construct a stub for access VC side VSAN APIs
-def GetVsanVcStub(stub, context=None):
+# Construct a stub for access vCenter side vSAN APIs.
+def GetVsanVcStub(stub, context=None, version=VSAN_VMODL_VERSION):
    return _GetVsanStub(stub, endpoint=VSAN_API_VC_SERVICE_ENDPOINT,
-                       context=context)
+                       context=context, version=version)
 
-#Construct a stub for access ESXi side VSAN APIs
-def GetVsanEsxStub(stub, context=None):
+# Construct a stub for access ESXi side vSAN APIs.
+def GetVsanEsxStub(stub, context=None, version=VSAN_VMODL_VERSION):
    return _GetVsanStub(stub, endpoint=VSAN_API_ESXI_SERVICE_ENDPOINT,
-                       context=context)
+                       context=context, version=version)
 
-#Construct a stub for access ESXi side VSAN APIs
-def GetVsanVcMos(vcStub, context=None):
-   vsanStub = GetVsanVcStub(vcStub, context)
+# Construct a stub for access ESXi side vSAN APIs.
+def GetVsanVcMos(vcStub, context=None, version=VSAN_VMODL_VERSION):
+   vsanStub = GetVsanVcStub(vcStub, context, version=version)
    vcMos = {
       'vsan-disk-management-system' : vim.cluster.VsanVcDiskManagementSystem(
                                          'vsan-disk-management-system',
@@ -80,14 +90,29 @@ def GetVsanVcMos(vcStub, context=None):
       'vsan-cluster-object-system' : vim.cluster.VsanObjectSystem(
                                         'vsan-cluster-object-system',
                                         vsanStub
-                                     ),
+                                        ),
+      'vsan-cluster-iscsi-target-system' : vim.cluster.VsanIscsiTargetSystem(
+                                              'vsan-cluster-iscsi-target-system',
+                                              vsanStub
+                                           ),
+      'vsan-vcsa-deployer-system' : vim.host.VsanVcsaDeployerSystem(
+                                       'vsan-vcsa-deployer-system',
+                                       vsanStub
+                                       ),
+      'vsan-vds-system' : vim.vsan.VsanVdsSystem('vsan-vds-system', vsanStub),
+      'vsan-vc-capability-system' : vim.cluster.VsanCapabilitySystem(
+                                       'vsan-vc-capability-system', vsanStub),
+      'vsan-mass-collector' : vim.VsanMassCollector('vsan-mass-collector',
+                                 vsanStub),
+      'vsan-phonehome-system' : vim.VsanPhoneHomeSystem('vsan-phonehome-system',
+                                   vsanStub),
    }
 
    return vcMos
 
-#Construct a stub for access ESXi side VSAN APIs
-def GetVsanEsxMos(esxStub, context=None):
-   vsanStub = GetVsanEsxStub(esxStub, context)
+# Construct a stub for access ESXi side vSAN APIs.
+def GetVsanEsxMos(esxStub, context=None, version=VSAN_VMODL_VERSION):
+   vsanStub = GetVsanEsxStub(esxStub, context, version=version)
    esxMos = {
       'vsan-performance-manager' : vim.cluster.VsanPerformanceManager(
                                       'vsan-performance-manager',
@@ -101,32 +126,33 @@ def GetVsanEsxMos(esxStub, context=None):
                                         'vsan-object-system',
                                         vsanStub
                                      ),
+      'vsan-vcsa-deployer-system' : vim.host.VsanVcsaDeployerSystem(
+                                       'vsan-vcsa-deployer-system',
+                                       vsanStub
+                                       ),
+      'vsan-capability-system' : vim.cluster.VsanCapabilitySystem(
+                                       'vsan-capability-system', vsanStub),
+      'vsanSystemEx' : vim.host.VsanSystemEx('vsanSystemEx', vsanStub),
+      'vsan-update-manager' : vim.host.VsanUpdateManager('vsan-update-manager',
+                                                         vsanStub),
    }
-
    return esxMos
 
-#Convert a VSAN Task to a Task MO binding to VC service
-#@param vsanTask the VSAN Task MO
-#@param stub the stub for the VC API
+# Convert a vSAN Task to a Task MO binding to vCenter service.
 def ConvertVsanTaskToVcTask(vsanTask, vcStub):
   vcTask = vim.Task(vsanTask._moId, vcStub)
   return vcTask
 
+# Wait for the vCenter task and returns after tasks are completed.
 def WaitForTasks(tasks, si):
-   """
-   Given the service instance si and tasks, it returns after all the
-   tasks are complete
-   """
-
    pc = si.content.propertyCollector
-
    taskList = [str(task) for task in tasks]
 
    # Create filter
    objSpecs = [vmodl.query.PropertyCollector.ObjectSpec(obj=task)
-                                                            for task in tasks]
-   propSpec = vmodl.query.PropertyCollector.PropertySpec(type=vim.Task,
-                                                         pathSet=[], all=True)
+         for task in tasks]
+   propSpec = vmodl.query.PropertyCollector.PropertySpec(
+         type=vim.Task, pathSet=[], all=True)
    filterSpec = vmodl.query.PropertyCollector.FilterSpec()
    filterSpec.objectSet = objSpecs
    filterSpec.propSet = [propSpec]
@@ -163,3 +189,20 @@ def WaitForTasks(tasks, si):
       if filter:
          filter.Destroy()
 
+# Get the VMODL version by checking the existence of vSAN namespace.
+def GetLatestVmodlVersion(hostname):
+   try:
+      vsanVmodlUrl = 'https://%s/sdk/vsanServiceVersions.xml' % hostname
+      if (hasattr(ssl, '_create_unverified_context') and
+         hasattr(ssl, '_create_default_https_context')):
+         ssl._create_default_https_context = ssl._create_unverified_context
+      xmldoc = minidom.parse(urlopen(vsanVmodlUrl, timeout=5))
+      for element in xmldoc.getElementsByTagName('name'):
+         if (element.firstChild.nodeValue == "urn:vsan"):
+            return VmomiSupport.newestVersions.Get('vsan')
+         else:
+            return VmomiSupport.newestVersions.Get('vim')
+   except Exception as e:
+      # Any exception like failing to open the XML or failed to parse the
+      # the content should lead to the returning of namespace with vim.
+      return VmomiSupport.newestVersions.Get('vim')
