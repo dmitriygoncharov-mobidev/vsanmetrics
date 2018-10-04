@@ -106,6 +106,7 @@ def GetVsanVcMos(vcStub, context=None, version=VSAN_VMODL_VERSION):
                                  vsanStub),
       'vsan-phonehome-system' : vim.VsanPhoneHomeSystem('vsan-phonehome-system',
                                    vsanStub),
+      'vsan-vum-system' : vim.cluster.VsanVumSystem('vsan-vum-system', vsanStub),
    }
 
    return vcMos
@@ -118,6 +119,10 @@ def GetVsanEsxMos(esxStub, context=None, version=VSAN_VMODL_VERSION):
                                       'vsan-performance-manager',
                                       vsanStub
                                    ),
+      'vsan-cluster-health-system' : vim.cluster.VsanVcClusterHealthSystem(
+                                        'vsan-cluster-health-system',
+                                        vsanStub
+                                     ),
       'ha-vsan-health-system' : vim.host.VsanHealthSystem(
                                         'ha-vsan-health-system',
                                         vsanStub
@@ -135,6 +140,10 @@ def GetVsanEsxMos(esxStub, context=None, version=VSAN_VMODL_VERSION):
       'vsanSystemEx' : vim.host.VsanSystemEx('vsanSystemEx', vsanStub),
       'vsan-update-manager' : vim.host.VsanUpdateManager('vsan-update-manager',
                                                          vsanStub),
+      'vsan-cluster-iscsi-target-system' : vim.cluster.VsanIscsiTargetSystem(
+                                              'vsan-cluster-iscsi-target-system',
+                                              vsanStub
+                                           ),
    }
    return esxMos
 
@@ -199,7 +208,12 @@ def GetLatestVmodlVersion(hostname):
       xmldoc = minidom.parse(urlopen(vsanVmodlUrl, timeout=5))
       for element in xmldoc.getElementsByTagName('name'):
          if (element.firstChild.nodeValue == "urn:vsan"):
-            return VmomiSupport.newestVersions.Get('vsan')
+            versions = xmldoc.getElementsByTagName('version')
+            versionId = versions[0].firstChild.nodeValue
+            if versionId == '6.6':
+               return 'vsan.version.version3'
+            else:
+               return VmomiSupport.newestVersions.Get('vsan')
          else:
             return VmomiSupport.newestVersions.Get('vim')
    except Exception as e:

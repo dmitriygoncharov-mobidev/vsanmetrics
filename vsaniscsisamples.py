@@ -66,7 +66,7 @@ def connectToSpbm(stub, context):
    pbmStub = SoapStubAdapter(
          host=hostname,
          path = "/pbm/sdk",
-         ns = "pbm/2.0",
+         version = "pbm.version.version2",
          sslContext=context,
          )
    pbmStub.cookie = stub.cookie
@@ -78,12 +78,17 @@ def getVsanStoragePolicy(pbmSi):
       resourceType=pbm.profile.ResourceTypeEnum.STORAGE
    )
 
-   profileIds = pbmSi.content.profileManager.PbmQueryProfile(resourceType)
-   profiles = pbmSi.content.profileManager.PbmRetrieveContent(profileIds)
+   profileManager = pbmSi.RetrieveContent().profileManager
+   profileIds = profileManager.PbmQueryProfile(resourceType)
+   profiles = profileManager.PbmRetrieveContent(profileIds)
    for profile in profiles:
+      # vSAN default storage profile possesses a unique profile ID of
+      # 'aa6d5a82-1c88-45da-85d3-3d74b91a5bad' across different releases.
+      # Other profiles may also be looked up when needed to apply to vSAN
+      # iSCSI services.
+      profileId = profile.profileId.uniqueId
       if (isinstance(profile, pbm.profile.CapabilityBasedProfile) and
-            profile.name == 'Virtual SAN Default Storage Policy'):
-         profileId = profile.profileId.uniqueId
+            profileId == 'aa6d5a82-1c88-45da-85d3-3d74b91a5bad'):
          return vim.VirtualMachineDefinedProfileSpec(profileId=profileId)
    return None
 
@@ -112,19 +117,12 @@ def main():
 
    atexit.register(Disconnect, si)
 
-   # For detecting whether the host is vCenter or ESXi.
    aboutInfo = si.content.about
    apiVersion = vsanapiutils.GetLatestVmodlVersion(args.host)
-
-   if aboutInfo.apiType == 'VirtualCenter':
-      vcVersion = StrictVersion(aboutInfo.apiVersion)
-      if vcVersion < StrictVersion('6.5'):
-         print('The Virtual Center with version %s (lower than 6.5) is not ',
-               'supported.' % aboutInfo.apiVersion)
-         return -1
-   else:
-      print('The vSAN iSCSI service API are only accessible through ',
-            'vCenter')
+   targetVersion = StrictVersion(aboutInfo.apiVersion)
+   if targetVersion < StrictVersion('6.5'):
+      print('The vCenter/ESXi with version %s (lower than 6.5) is not ',
+            'supported.' % aboutInfo.apiVersion)
       return -1
 
    cluster = getClusterInstance(args.clusterName, si)
@@ -142,7 +140,7 @@ def main():
    pbmSi = connectToSpbm(si._stub, context)
    vsanStoragePolicy = getVsanStoragePolicy(pbmSi)
    if vsanStoragePolicy is None:
-      print('Cannot find the Virtual SAN Storage Policy from the Virtual',
+      print('Cannot find the vSAN Storage Policy from the Virtual ' +
             'Center server.')
       return -1
 
