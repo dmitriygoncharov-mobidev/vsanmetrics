@@ -7,6 +7,7 @@ from pyVmomi import VmomiSupport, SoapStubAdapter, vim, vmodl
 
 from multiprocessing import Process
 
+from pprint import pprint
 import argparse
 import atexit
 import getpass
@@ -16,7 +17,8 @@ import ssl
 
 import vsanapiutils
 import vsanmgmtObjects
-
+import json
+import pdb
 
 def get_args():
     parser = argparse.ArgumentParser(
@@ -48,6 +50,14 @@ def get_args():
                         required=True,
                         help='Cluster Name')
 
+    parser.add_argument('-esx_user', '--esx_username',
+                        dest='esxUsername',
+                        required=False,
+                        help='ESX username')
+    parser.add_argument('-esx_pswd', '--esx_password',
+                        dest='esxPassword',
+                        required=False,
+                        help='ESX password')
     parser.add_argument("--performance",
                         help="Output performance metrics",
                         action="store_true")
@@ -58,6 +68,10 @@ def get_args():
 
     parser.add_argument("--health",
                         help="Output cluster health status",
+                        action="store_true")
+
+    parser.add_argument("--disks",
+                        help="Output vms disks status",
                         action="store_true")
 
     parser.add_argument('--skipentitytypes',
@@ -76,7 +90,7 @@ def get_args():
         print("You can't skip a performance entity type if you don't provide the --performance tag")
         exit()
 
-    if not args.performance and not args.capacity and not args.health:
+    if not args.performance and not args.capacity and not args.health and not args.disks:
         print('Please provide tag(s) --performance and/or --capacity and/or --health to specify what type of data you want to collect')
         exit()
 
@@ -93,6 +107,17 @@ def getClusterInstance(clusterName, content):
             return cluster
     return None
 
+def get_obj(content, vim_type, name=None):
+    obj = None
+    container = content.viewManager.CreateContainerView(
+        content.RootFolder, vim_type, True)
+    if name:
+        for c in container.view:
+            if c.name == name:
+                obj = c
+                return obj
+    else:
+        return container.view
 
 def getInformations(witnessHosts, cluster):
 
@@ -179,7 +204,6 @@ def convertStrToTimestamp(str):
 
 # parse EntytyRefID, convert to tags
 def parseEntityRefId(measurement, entityRefId, uuid, vms, disks):
-
     tags = {}
 
     if measurement == 'vscsi':
@@ -251,15 +275,15 @@ def parseEntityRefId(measurement, entityRefId, uuid, vms, disks):
 
         if measurement == 'vsan-iscsi-host':
             tags['uuid'] = entityRefId[1]
-            tags['hostname'] = uuid[entityRefId[1]]
+            tags['hostname'] = uuid.get(entityRefId[1])
 
         if measurement == 'vsan-iscsi-target':
             tags['uuid'] = entityRefId[1]
-            tags['hostname'] = uuid[entityRefId[1]]
+            tags['hostname'] = uuid.get(entityRefId[1])
 
         if measurement == 'vsan-iscsi-lun':
             tags['uuid'] = entityRefId[1]
-            tags['hostname'] = uuid[entityRefId[1]]
+            tags['hostname'] = uuid.get(entityRefId[1])
 
     return tags
 
@@ -270,13 +294,21 @@ def arrayToString(data):
     result = ""
 
     for key, val in data.items():
+        # v = val.replace(' ', '\ ')
+        v = val
+        if isinstance(v, basestring):
+            v = val.replace(' ', '\ ')
+        t = 'i' if isinstance(val, (int, long)) else ''
         if i == 0:
-            result = "%s=%s" % (key, val)
+            result = "%s=%s%s" % (key, v, t)
         else:
-            result = result + ",%s=%s" % (key, val)
+            result = result + ",%s=%s%s" % (key, v, t)
         i = i + 1
     return result
 
+# Generate measurement with brand prefix
+def genMeasurementName(mtype, scope):
+    return "%s_%s_%s" % ('prevensys_vsan', mtype, scope)
 
 def parseVsanObjectSpaceSummary(data):
     fields = {}
@@ -315,7 +347,8 @@ def parseCapacity(scope, data, tagsbase, timestamp):
 
     tags['scope'] = scope
     tags.update(tagsbase)
-    measurement = 'capacity_' + scope
+    # measurement = 'capacity_' + scope
+    measurement = genMeasurementName('capacity', scope)
 
     if scope == 'global':
         fields['freeCapacityB'] = data.freeCapacityB
@@ -334,24 +367,36 @@ def parseCapacity(scope, data, tagsbase, timestamp):
 
 def parseHealth(test, value, tagsbase, timestamp):
 
-    measurement = 'health_' + test
+    # measurement = 'health_' + test
+    measurement = genMeasurementName('health', test)
+    values_dict = {
+        'skipped': -1, 'green': 0, 'yellow': 1, 'red': 2, 'info': 3
+    }
 
     tags = tagsbase
 
     fields = {}
 
-    if value == 'green':
-        fields['health'] = 0
+    v = values_dict.get(value)
+    if v is None: v = -999
+    fields['health'] = v
+    # fields['health'] = -999 if (v is None) else fields['health'] = v
+    # if value == 'green':
+    #     fields['health'] = 0
 
-    if value == 'yellow':
-        fields['health'] = 1
+    # if value == 'yellow':
+    #     fields['health'] = 1
 
-    if value == 'red':
-        fields['health'] = 2
+    # if value == 'red':
+    #     fields['health'] = 2
 
-    fields['value'] = '\"' + value + '\"'
+    # if value == 'skipped':
+    #     fields['health'] = -1
 
-    printInfluxLineProtocol(measurement, tags, fields, timestamp)
+    tags['health_title'] = value
+
+    if value != 'skipped':
+        printInfluxLineProtocol(measurement, tags, fields, timestamp)
 
 
 def getCapacity(args, tagsbase):
@@ -408,7 +453,6 @@ def getHealth(args, tagsbase):
 
     apiVersion = vsanapiutils.GetLatestVmodlVersion(args.vcenter)
     vcMos = vsanapiutils.GetVsanVcMos(si._stub, context=context, version=apiVersion)
-
     vsanClusterHealthSystem = vcMos['vsan-cluster-health-system']
 
     try:
@@ -481,7 +525,7 @@ def getPerformance(args, tagsbase):
     endTime = datetime.utcnow()
     startTime = endTime + timedelta(minutes=-10)
 
-    splitSkipentitytypes = []
+    splitSkipentitytypes = ['cluster-domclient', 'cluster-domcompmgr']
 
     if args.skipentitytypes:
             splitSkipentitytypes = args.skipentitytypes.split(',')
@@ -546,15 +590,13 @@ def getPerformance(args, tagsbase):
             for metric in metrics:
 
                 if not metric.sampleInfo == "":
-
-                    measurement = entitieName
-
+                    measurement = genMeasurementName('performance', entitieName)
                     sampleInfos = metric.sampleInfo.split(",")
                     lenValues = len(sampleInfos)
 
                     timestamp = convertStrToTimestamp(sampleInfos[lenValues - 1])
 
-                    tags = parseEntityRefId(measurement, metric.entityRefId, uuid, vms, disks)
+                    tags = parseEntityRefId(entitieName, metric.entityRefId, uuid, vms, disks)
 
                     tags.update(tagsbase)
 
@@ -606,6 +648,56 @@ def connectvCenter(args, context):
 
     return si, content, cluster_obj
 
+def removeChar(string, pattern):
+    str = list(string)
+    str.remove(pattern)
+    return ''.join(str)
+
+
+def parseVMDetailedInfo(vmIdentity, host, tagsbase, timestamp):
+    tags = {}
+    fields = { 'physicalUsedGB': 0.0, 'reservedCapacityGB': 0.0 }
+    tags.update(tagsbase)
+    tags['esxhost'] = host.name
+    vis = host.configManager.vsanInternalSystem
+    for identity in vmIdentity['objIdentities']:
+        if identity['type'] == 'namespace':
+            attrs = vis.GetVsanObjExtAttrs(identity['uuid'])
+            json_attrs = json.loads(attrs)
+            tags['vmname'] = json_attrs.get(identity['uuid']).get('User friendly name')
+        elif identity['type'] == 'vdisk':
+            physical = identity.get('physicalUsedB')
+            reserved = identity.get('reservedCapacityB')
+            if physical != None and reserved != None:
+                fields['physicalUsedGB'] += float(physical)/float(1024*1024)
+                fields['reservedCapacityGB'] += float(reserved)/float(1024*1024)
+    return formatInfluxLineProtocol('prevensys_vsan_vm_detailed_info', tags, fields, timestamp)
+
+def getDiskInfo(args, tagsbase):
+    result = ""
+    context = ssl._create_unverified_context()
+    si, _, cluster_obj = connectvCenter(args, context)
+    atexit.register(Disconnect, si)
+    apiVersion = vsanapiutils.GetLatestVmodlVersion(args.vcenter)
+    vms = getVMs(cluster_obj)
+    timestamp = int(time.time() * 1000000000)
+
+    for host in cluster_obj.host:
+        host_si = SmartConnect(host=host.name,user=args.esxUsername, pwd=args.esxPassword,port=443, sslContext=context)
+        vsanStub = vsanapiutils.GetVsanEsxStub(host_si._stub, context)
+        esxvc = vim.cluster.VsanObjectSystem('vsan-object-system', vsanStub)
+        results = esxvc.VsanQueryObjectIdentities(includeObjIdentity=True, includeSpaceSummary=True)
+        vis = host.configManager.vsanInternalSystem
+        jsonResults = json.loads(results.rawData)
+        vmIdentities = jsonResults['identities']['vmIdentities']
+        for vmIdentity in vmIdentities:
+            try:
+                result += parseVMDetailedInfo(vmIdentity, host, tagsbase, timestamp)
+            except Exception as e:
+                print("Caught exception in VMS disks " + str(e))
+                return -1
+        Disconnect(host_si)
+    print(result)
 
 # Main...
 def main():
@@ -614,6 +706,8 @@ def main():
     args = get_args()
 
     # Initiate tags with vcenter and cluster name
+
+    # print("Cluster: %s", args.clusterName)
     tagsbase = {}
     tagsbase['vcenter'] = args.vcenter
     tagsbase['cluster'] = args.clusterName
@@ -629,6 +723,9 @@ def main():
     # PERFORMANCE
     if args.performance:
         Process(target=getPerformance, args=(args, tagsbase,)).start()
+
+    if args.disks:
+        Process(target=getDiskInfo, args=(args, tagsbase,)).start()
 
     return 0
 

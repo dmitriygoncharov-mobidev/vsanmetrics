@@ -16,7 +16,7 @@ import vsanapiutils
 import vsanmgmtObjects
 
 
-def get_args():  
+def get_args():
     parser = argparse.ArgumentParser(
         description='Get vSAN cluster statistics')
 
@@ -41,12 +41,12 @@ def get_args():
                         action='store',
                         help='Password to use when connecting to vcenter')
 
-    parser.add_argument('-c', '--cluster_name', 
-                        dest='clusterName', 
+    parser.add_argument('-c', '--cluster_name',
+                        dest='clusterName',
                         required=True,
                         help='Cluster Name')
 
-    parser.add_argument('-f', '--format', 
+    parser.add_argument('-f', '--format',
                     dest='format',
                     default='markdown',
                     action='store',
