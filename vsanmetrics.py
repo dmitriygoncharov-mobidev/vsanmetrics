@@ -525,11 +525,26 @@ def getPerformance(args, tagsbase):
     endTime = datetime.utcnow()
     startTime = endTime + timedelta(minutes=-10)
 
-    splitSkipentitytypes = ['cluster-domclient', 'cluster-domcompmgr']
+    splitSkipentitytypes = []
 
     if args.skipentitytypes:
             splitSkipentitytypes = args.skipentitytypes.split(',')
 
+    spec = vim.cluster.VsanPerfQuerySpec(
+        entityRefId='cluster-domclient:*',
+        labels=['iopsRead', 'iopsWrite', 'latencyAvgRead', 'latencyAvgWrite', 'congestion', 'oio', 'throughputRead', 'throughputWrite'],
+        startTime=startTime,
+        endTime=endTime
+    )
+    mmetrics = vsanPerfSystem.VsanPerfQueryPerf(
+        querySpecs=[spec],
+        cluster=cluster_obj
+    )
+    print("Metrics")
+    print(mmetrics)
+    for entities in entityTypes:
+        print(entities.name)
+    return -1
     for entities in entityTypes:
 
         if entities.name not in splitSkipentitytypes:
@@ -549,12 +564,17 @@ def getPerformance(args, tagsbase):
             entity = '%s:*' % (entities.name)
 
             # Build spec object
-            spec = vim.cluster.VsanPerfQuerySpec(
-                endTime=endTime,
-                entityRefId=entity,
-                labels=labels,
-                startTime=startTime
-            )
+            # spec = vim.cluster.VsanPerfQuerySpec(
+            #     endTime=endTime,
+            #     entityRefId=entity,
+            #     labels=labels,
+            #     startTime=startTime
+            # )
+            spec = vim.cluster.VsanPerfQuerySpec()
+            spec.entityRefId = entity
+            spec.labels = labels
+            spec.endTime = endTime
+            spec.startTime = startTime
 
             # Get statistics
             try:
