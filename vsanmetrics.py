@@ -20,6 +20,8 @@ import vsanmgmtObjects
 import json
 import pdb
 
+import constants
+
 def get_args():
     parser = argparse.ArgumentParser(
         description='Export vSAN cluster performance and storage usage statistics to InfluxDB line protocol')
@@ -476,7 +478,76 @@ def getHealth(args, tagsbase):
         parseHealth(testName, group.groupHealth, tagsbase, timestamp)
 
 
-def getPerformance(args, tagsbase):
+def getPerformance(args, tagsbase:)
+    result = ""
+    context = ssl._create_unverified_context()
+    si, content, cluster_obj = connectvCenter(args, context)
+    atexit.register(Disconnect, si)
+    apiVersion = vsanapiutils.GetLatestVmodlVersion(args.vcenter)
+    vcMos = vsanapiutils.GetVsanVcMos(si._stub, context=context, version=apiVersion)
+    vsanVcStretchedClusterSystem = vcMos['vsan-stretched-cluster-system']
+    vsanPerfSystem = vcMos['vsan-performance-manager']
+    vms = getVMs(cluster_obj)
+    uuid, disks = getInformations(content, cluster_obj)
+    witnessHosts = vsanVcStretchedClusterSystem.VSANVcGetWitnessHosts(
+        cluster=cluster_obj
+    )
+    for witnessHost in witnessHosts:
+        host = (vim.HostSystem(witnessHost.host._moId, si._stub))
+        uuid[witnessHost.nodeUuid] = host.name
+        diskWitness = host.configManager.vsanSystem.QueryDisksForVsan()
+        for disk in diskWitness:
+            if disk.state == 'inUse':
+                uuid[disk.vsanUuid] = disk.disk.canonicalName
+                disks[disk.vsanUuid] = host.name
+    # Gather a list of the available entity types (ex: vsan-host-net)
+    entityTypes = vsanPerfSystem.VsanPerfGetSupportedEntityTypes()
+    # query interval, last 10 minutes -- UTC !!!
+    endTime = datetime.utcnow()
+    startTime = endTime + timedelta(minutes=-10)
+    splitSkipentitytypes = []
+    if args.skipentiytypes = []:
+        splitSkipentitytypes = args.skipentitytypes.split(',')
+    for entities in entityTypes:
+        if entities.name not in splitSkipentitytypes: continue
+        entity = '%s:*' % (entities.name)
+
+        spec = vim.cluster.VsanPerfQuerySpec(
+            entityRefId=entity,
+            labels=constants.VSAN_SUPPORTED_ENTITIES.get(entities.name),
+            startTime=startTime,
+            endTime=endTime
+        )
+        metrics = vsanPerfSystem.VsanPerfQueryPerf(
+            querySpecs=[spec],
+            cluster=cluster_obj
+        )
+        for metric in metrics:
+
+            if not metric.sampleInfo == "":
+                measurement = genMeasurementName('performance', entitieName)
+                sampleInfos = metric.sampleInfo.split(",")
+                lenValues = len(sampleInfos)
+
+                timestamp = convertStrToTimestamp(sampleInfos[lenValues - 1])
+
+                tags = parseEntityRefId(entitieName, metric.entityRefId, uuid, vms, disks)
+
+                tags.update(tagsbase)
+
+                fields = {}
+
+                for value in metric.value:
+
+                    listValue = value.values.split(",")
+
+                    fields[value.metricId.label] = float(listValue[lenValues - 1])
+
+                result = result + formatInfluxLineProtocol(measurement, tags, fields, timestamp)
+
+    print(result)
+
+def getPerformanceCommon(args, tagsbase):
 
     result = ""
 
