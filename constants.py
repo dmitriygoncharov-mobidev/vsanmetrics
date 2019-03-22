@@ -1,4 +1,4 @@
 VSAN_SUPPORTED_ENTITIES = {
-    'cluster-domclient': ['iopsRead', 'throughputRead', 'latencyAvgRead', 'readCount', 'iopsWrite', 'throughputWrite', 'latencyAvgWrite', 'writeCount', 'congestion', 'oio'],
-    'cluster-domcompmgr': ['iopsRead']
+    'cluster-domclient': ['iopsRead'],
+    'cluster-domclient-full': ['iopsRead', 'throughputRead', 'latencyAvgRead', 'iopsWrite', 'throughputWrite', 'latencyAvgWrite', 'congestion', 'oio'],
 }

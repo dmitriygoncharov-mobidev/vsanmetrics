@@ -478,7 +478,7 @@ def getHealth(args, tagsbase):
         parseHealth(testName, group.groupHealth, tagsbase, timestamp)
 
 
-def getPerformance(args, tagsbase:)
+def getPerformanceTest(args, tagsbase):
     result = ""
     context = ssl._create_unverified_context()
     si, content, cluster_obj = connectvCenter(args, context)
@@ -505,23 +505,28 @@ def getPerformance(args, tagsbase:)
     # query interval, last 10 minutes -- UTC !!!
     endTime = datetime.utcnow()
     startTime = endTime + timedelta(minutes=-10)
-    splitSkipentitytypes = []
-    if args.skipentiytypes = []:
-        splitSkipentitytypes = args.skipentitytypes.split(',')
+    splitSkipentitytypes = ['vsan-vnic-net', 'vsan-host-net', 'vsan-pnic-net', 'vsan-iscsi-host', 'vsan-iscsi-target', 'vsan-iscsi-lun']
+    # if args.skipentiytypes == []:
+    #     splitSkipentitytypes = args.skipentitytypes.split(',')
     for entities in entityTypes:
-        if entities.name not in splitSkipentitytypes: continue
-        entity = '%s:*' % (entities.name)
-
+        if entities.name in splitSkipentitytypes: continue
+        entitieName = entities.name
+        entity = '%s:*' % (entitieName)
+        print(entity)
         spec = vim.cluster.VsanPerfQuerySpec(
             entityRefId=entity,
-            labels=constants.VSAN_SUPPORTED_ENTITIES.get(entities.name),
+            labels=constants.VSAN_SUPPORTED_ENTITIES.get(entitieName),
             startTime=startTime,
             endTime=endTime
         )
-        metrics = vsanPerfSystem.VsanPerfQueryPerf(
-            querySpecs=[spec],
-            cluster=cluster_obj
-        )
+        try:
+            metrics = vsanPerfSystem.VsanPerfQueryPerf(
+                querySpecs=[spec],
+                cluster=cluster_obj
+            )
+        except Exception as e:
+            continue
+
         for metric in metrics:
 
             if not metric.sampleInfo == "":
@@ -547,7 +552,7 @@ def getPerformance(args, tagsbase:)
 
     print(result)
 
-def getPerformanceCommon(args, tagsbase):
+def getPerformance(args, tagsbase):
 
     result = ""
 
@@ -601,21 +606,32 @@ def getPerformanceCommon(args, tagsbase):
     if args.skipentitytypes:
             splitSkipentitytypes = args.skipentitytypes.split(',')
 
-    spec = vim.cluster.VsanPerfQuerySpec(
-        entityRefId='cluster-domclient:*',
-        labels=['iopsRead', 'iopsWrite', 'latencyAvgRead', 'latencyAvgWrite', 'congestion', 'oio', 'throughputRead', 'throughputWrite'],
-        startTime=startTime,
-        endTime=endTime
-    )
-    mmetrics = vsanPerfSystem.VsanPerfQueryPerf(
-        querySpecs=[spec],
-        cluster=cluster_obj
-    )
-    print("Metrics")
-    print(mmetrics)
-    for entities in entityTypes:
-        print(entities.name)
-    return -1
+    # labels=['iopsRead', 'iopsWrite', 'latencyAvgRead', 'latencyAvgWrite', 'congestion', 'oio', 'throughputRead', 'throughputWrite', 'readCount']
+    # labels=['readCount']
+    # mmetrics = []
+    # while len(mmetrics) == 0:
+    #     if len(labels) == 0: break
+    #     try:
+    #         spec = vim.cluster.VsanPerfQuerySpec(
+    #             entityRefId='cluster-domclient:*',
+    #             labels=labels,
+    #             startTime=startTime,
+    #             endTime=endTime
+    #         )
+    #         mmetrics = vsanPerfSystem.VsanPerfQueryPerf(
+    #             querySpecs=[spec],
+    #             cluster=cluster_obj
+    #         )
+    #     except vmodl.fault.SystemError as e:
+    #         col = getattr(e, 'msg', repr(e)).split(': ')[1]
+    #         labels.remove(col)
+    #         print(col)
+
+    # print("Metrics")
+    # print(mmetrics)
+    # for entities in entityTypes:
+    #     print(entities.name)
+    # return -1
     for entities in entityTypes:
 
         if entities.name not in splitSkipentitytypes:
@@ -634,49 +650,49 @@ def getPerformanceCommon(args, tagsbase):
             # Build entity
             entity = '%s:*' % (entities.name)
 
-            # Build spec object
-            # spec = vim.cluster.VsanPerfQuerySpec(
-            #     endTime=endTime,
-            #     entityRefId=entity,
-            #     labels=labels,
-            #     startTime=startTime
-            # )
-            spec = vim.cluster.VsanPerfQuerySpec()
-            spec.entityRefId = entity
-            spec.labels = labels
-            spec.endTime = endTime
-            spec.startTime = startTime
+            metrics = []
+            while len(metrics) == 0:
+                if len(labels) == 0: break
+                try:
+                    # Build spec object
+                    spec = vim.cluster.VsanPerfQuerySpec(
+                        endTime=endTime,
+                        entityRefId=entity,
+                        labels=labels,
+                        startTime=startTime
+                    )
+                    metrics = vsanPerfSystem.VsanPerfQueryPerf(
+                        querySpecs=[spec],
+                        cluster=cluster_obj
+                    )
+                except vmodl.fault.SystemError as e:
+                    msg = getattr(e, 'msg', repr(e))
+                    labels.remove(msg.split(': ')[1])
+                except vmodl.fault.InvalidArgument as e:
+                    break
+            # except vmodl.fault.InvalidArgument as e:
+            #     print("Caught InvalidArgument exception : " + str(e))
+            #     return -1
 
-            # Get statistics
-            try:
-                metrics = vsanPerfSystem.VsanPerfQueryPerf(
-                    querySpecs=[spec],
-                    cluster=cluster_obj
-                )
+            # except vmodl.fault.NotFound as e:
+            #     print("Caught NotFound exception : " + str(e))
+            #     return -1
 
-            except vmodl.fault.InvalidArgument as e:
-                print("Caught InvalidArgument exception : " + str(e))
-                return -1
+            # except vmodl.fault.NotSupported as e:
+            #     print("Caught NotSupported exception : " + str(e))
+            #     return -1
 
-            except vmodl.fault.NotFound as e:
-                print("Caught NotFound exception : " + str(e))
-                return -1
+            # except vmodl.fault.RuntimeFault as e:
+            #     print("Caught RuntimeFault exception : " + str(e))
+            #     return -1
 
-            except vmodl.fault.NotSupported as e:
-                print("Caught NotSupported exception : " + str(e))
-                return -1
+            # except vmodl.fault.Timedout as e:
+            #     print("Caught Timedout exception : " + str(e))
+            #     return -1
 
-            except vmodl.fault.RuntimeFault as e:
-                print("Caught RuntimeFault exception : " + str(e))
-                return -1
-
-            except vmodl.fault.Timedout as e:
-                print("Caught Timedout exception : " + str(e))
-                return -1
-
-            except vmodl.fault.VsanNodeNotMaster as e:
-                print("Caught VsanNodeNotMaster exception : " + str(e))
-                return -1
+            # except vmodl.fault.VsanNodeNotMaster as e:
+            #     print("Caught VsanNodeNotMaster exception : " + str(e))
+            #     return -1
 
             for metric in metrics:
 
