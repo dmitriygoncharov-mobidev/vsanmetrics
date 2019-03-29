@@ -790,20 +790,44 @@ def getDiskInfo(args, tagsbase):
     timestamp = int(time.time() * 1000000000)
 
     for host in cluster_obj.host:
-        host_si = SmartConnect(host=host.name,user=args.esxUsername, pwd=args.esxPassword,port=443, sslContext=context)
-        vsanStub = vsanapiutils.GetVsanEsxStub(host_si._stub, context)
-        esxvc = vim.cluster.VsanObjectSystem('vsan-object-system', vsanStub)
-        results = esxvc.VsanQueryObjectIdentities(includeObjIdentity=True, includeSpaceSummary=True)
-        vis = host.configManager.vsanInternalSystem
-        jsonResults = json.loads(results.rawData)
-        vmIdentities = jsonResults['identities']['vmIdentities']
-        for vmIdentity in vmIdentities:
-            try:
-                result += parseVMDetailedInfo(vmIdentity, host, tagsbase, timestamp)
-            except Exception as e:
-                print("Caught exception in VMS disks " + str(e))
-                return -1
-        Disconnect(host_si)
+        try:
+            print(host.name)
+            host_si = SmartConnect(host=host.name,user=args.esxUsername, pwd=args.esxPassword,port=443, sslContext=context)
+            vsanStub = vsanapiutils.GetVsanEsxStub(host_si._stub, context)
+            esxvc = vim.cluster.VsanObjectSystem('vsan-object-system', vsanStub)
+            results = esxvc.VsanQueryObjectIdentities(includeObjIdentity=True, includeSpaceSummary=True)
+            vis = host.configManager.vsanInternalSystem
+            jsonResults = json.loads(results.rawData)
+            vmIdentities = jsonResults['identities']['vmIdentities']
+            for vmIdentity in vmIdentities:
+                try:
+                    result += parseVMDetailedInfo(vmIdentity, host, tagsbase, timestamp)
+                except Exception as e:
+                    print("Caught exception in VMS disks " + str(e))
+                    return -1
+
+        except Exception as e:
+            print("Caught exception in VMS disks" + str(e))
+            return -1
+        finally:
+            Disconnect(host_si)
+
+        # print(host.name)
+        # host_si = SmartConnect(host=host.name,user=args.esxUsername, pwd=args.esxPassword,port=443, sslContext=context)
+        # vsanStub = vsanapiutils.GetVsanEsxStub(host_si._stub, context)
+        # esxvc = vim.cluster.VsanObjectSystem('vsan-object-system', vsanStub)
+        # results = esxvc.VsanQueryObjectIdentities(includeObjIdentity=True, includeSpaceSummary=True)
+        # vis = host.configManager.vsanInternalSystem
+        # jsonResults = json.loads(results.rawData)
+        # vmIdentities = jsonResults['identities']['vmIdentities']
+        # for vmIdentity in vmIdentities:
+        #     try:
+        #         result += parseVMDetailedInfo(vmIdentity, host, tagsbase, timestamp)
+        #     except Exception as e:
+        #         print("Caught exception in VMS disks " + str(e))
+        #         return -1
+        # Disconnect(host_si)
+
     print(result)
 
 # Main...
