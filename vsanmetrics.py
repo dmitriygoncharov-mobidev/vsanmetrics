@@ -512,7 +512,6 @@ def getPerformanceTest(args, tagsbase):
         if entities.name in splitSkipentitytypes: continue
         entitieName = entities.name
         entity = '%s:*' % (entitieName)
-        print(entity)
         spec = vim.cluster.VsanPerfQuerySpec(
             entityRefId=entity,
             labels=constants.VSAN_SUPPORTED_ENTITIES.get(entitieName),
@@ -791,7 +790,6 @@ def getDiskInfo(args, tagsbase):
 
     for host in cluster_obj.host:
         try:
-            print(host.name)
             host_si = SmartConnect(host=host.name,user=args.esxUsername, pwd=args.esxPassword,port=443, sslContext=context)
             vsanStub = vsanapiutils.GetVsanEsxStub(host_si._stub, context)
             esxvc = vim.cluster.VsanObjectSystem('vsan-object-system', vsanStub)
