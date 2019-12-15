@@ -300,6 +300,8 @@ def arrayToString(data):
         v = val
         if isinstance(v, basestring):
             v = val.replace(' ', '\ ')
+            if not v:
+                continue
         t = 'i' if isinstance(val, (int, long)) else ''
         if i == 0:
             result = "%s=%s%s" % (key, v, t)
@@ -749,7 +751,7 @@ def connectvCenter(args, context):
 
     # Exit if the cluster provided in the arguments is not available
     if not cluster_obj:
-        print 'The required cluster not found in inventory, validate input.'
+        print('The required cluster not found in inventory, validate input.')
         return -1
 
     return si, content, cluster_obj
